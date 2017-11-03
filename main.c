@@ -6,6 +6,7 @@
 
 #include <sys/stat.h>
 
+unsigned long get_size_dirent(struct dirent* dirent_ptr, char* parent_dir);
 unsigned long get_size_path(char*);
 void handle_error();
 
@@ -37,6 +38,30 @@ char* dirent_type_str(struct dirent* dirent_ptr) {
   return "Unk ";
 }
 
+unsigned long get_size_dir(char* dir_path) {
+  DIR* dir_stream = opendir(dir_path);
+
+  unsigned long result = 0;
+
+  struct dirent* dirent_ptr;
+  while ((dirent_ptr = readdir(dir_stream))) {
+    if (dirent_ptr->d_type == DT_DIR) {
+      if (strcmp(dirent_ptr->d_name, ".") != 0 &&
+          strcmp(dirent_ptr->d_name, "..") != 0) {
+        char* subdir = combine_paths(dir_path, dirent_ptr->d_name);
+        result += get_size_dir(subdir);
+        free(subdir);
+      }
+    } else {
+      result += get_size_dirent(dirent_ptr, dir_path);
+    }
+  }
+
+  closedir(dir_stream);
+
+  return result;
+}
+
 unsigned long get_size_dirent(struct dirent* dirent_ptr, char* parent_dir) {
   char* path = combine_paths(parent_dir, dirent_ptr->d_name);
   unsigned long result = get_size_path(path);
@@ -61,7 +86,7 @@ void handle_error() {
 int main(int argc, char** argv) {
   char* dir_path = argc > 1 ? argv[1] : ".";
   printf("Stats for directory: %s\n", dir_path);
-  // printf("Total directory size: %lu\n", get_size_path(dir_path));
+  printf("Total directory size: %lu\n", get_size_dir(dir_path));
   printf("\n");
 
   DIR* dir_stream = opendir(dir_path);
@@ -70,7 +95,13 @@ int main(int argc, char** argv) {
   while ((dirent_ptr = readdir(dir_stream))) {
     printf("%s %s\n", dirent_type_str(dirent_ptr), dirent_ptr->d_name);
     // For some reason, directories have 0 bytes associated with them?
-    if (dirent_ptr->d_type != DT_DIR) {
+    if (strcmp(dirent_ptr->d_name, "..") == 0) {
+      printf("%s\n", "Size: <omitted due to performance concerns>");
+    } else if (dirent_ptr->d_type == DT_DIR) {
+      char* subdir = combine_paths(dir_path, dirent_ptr->d_name);
+      printf("Size: %lu bytes\n", get_size_dir(subdir));
+      free(subdir);
+    } else {
       printf("Size: %lu bytes\n", get_size_dirent(dirent_ptr, dir_path));
     }
     printf("\n");
